@@ -1,13 +1,14 @@
 {
     "No optimizations": [],
-    "Constant Propagation": [
+    "All optimizations": null,
+    "Constant propagation": [
         "propagate-constants"
     ],
-    "Constant propagation": [
+    "Uniquify + constant propagation": [
         "uniquify-variables",
         "propagate-constants"
     ],
-    "Constant propagation and inlining": [
+    "Uniquify + constant propagation + inlining": [
         "uniquify-variables",
         "inline",
         "propagate-constants"
