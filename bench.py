@@ -5,7 +5,7 @@ import sys
 import argparse
 import json
 import subprocess
-import shutil
+import platform
 import time
 import csv
 
@@ -32,31 +32,58 @@ def pass_args_for(passes):
     return " ".join("-p {}".format(p) for p in passes)
 
 
-def install_bench_runtime():
-    bench_runtime = os.path.join(os.path.dirname(__file__), "bench_runtime.c")
-    student_runtime = os.path.abspath("../lib/runtime/runtime.c")
-    student_runtime_dir = os.path.abspath("../lib/runtime")
+def nasm_format():
+    return "macho64" if platform.system() == "Darwin" else "elf64"
 
-    shutil.copy2(bench_runtime, student_runtime)
-    subprocess.run("make", cwd=student_runtime_dir, check=True,
-                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    subprocess.run("dune build", shell=True, cwd="..", check=True)
+
+def gcc_no_pie():
+    return "-Wl,-no_pie" if platform.system() == "Darwin" else "-no-pie"
+
+
+def compile_bench_runtime():
+    bench_runtime_c = os.path.join(os.path.dirname(__file__), "bench_runtime.c")
+    if not os.path.exists(bench_runtime_c):
+        return None
+    bench_runtime_o = os.path.join(os.path.dirname(__file__), "bench_runtime.o")
+    try:
+        subprocess.run(
+            ["gcc", "-g", "-c", "-o", bench_runtime_o, bench_runtime_c],
+            check=True, capture_output=True,
+        )
+        return bench_runtime_o
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+def link_bench_binary(asm_file, bench_runtime_o, bench_exe):
+    obj_file = asm_file + ".bench.o"
+    try:
+        subprocess.run(
+            ["nasm", asm_file, "-o", obj_file, "-f", nasm_format()],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["gcc", gcc_no_pie(), obj_file, "-g", bench_runtime_o,
+             "-o", bench_exe, "-z", "execstack"],
+            check=True, capture_output=True,
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+    finally:
+        if os.path.exists(obj_file):
+            os.remove(obj_file)
 
 
 def bench(config, repetitions):
-    use_bench_timing = False
-    bench_runtime = os.path.join(os.path.dirname(__file__), "bench_runtime.c")
-    if os.path.exists(bench_runtime):
-        try:
-            install_bench_runtime()
-            use_bench_timing = True
-        except (FileNotFoundError, subprocess.CalledProcessError) as e:
-            print(f"Warning: could not install bench runtime ({e}), falling back to wall-clock timing")
-            subprocess.run("dune build", shell=True, cwd="..", check=True)
-    else:
-        subprocess.run("dune build", shell=True, cwd="..", check=True)
+    subprocess.run("dune build", shell=True, cwd="..", check=True)
 
     compile_exe = os.path.abspath("../_build/default/bin/compile.exe")
+    bench_runtime_o = compile_bench_runtime()
+    if bench_runtime_o:
+        print("Using in-process timing via bench runtime")
+    else:
+        print("Bench runtime not available, using wall-clock timing")
 
     base_output = "compiled_benchmarks"
     if not os.path.exists(base_output):
@@ -75,6 +102,19 @@ def bench(config, repetitions):
                 shell=True,
                 check=True,
             )
+
+    bench_binaries = {}
+    if bench_runtime_o:
+        for i, (name, passes) in configs:
+            output_dir = os.path.join(base_output, str(i + 1))
+            for example in examples:
+                asm_file = os.path.join(output_dir, f"{example}.s")
+                bench_exe = os.path.join(output_dir, f"{example}.bench.exe")
+                if os.path.exists(asm_file):
+                    if link_bench_binary(asm_file, bench_runtime_o, bench_exe):
+                        bench_binaries[(i, example)] = os.path.abspath(bench_exe)
+                    else:
+                        print(f"Warning: could not link bench binary for {example} [{name}], falling back to wall-clock")
 
     results = {}
     for example in examples:
@@ -111,12 +151,16 @@ def bench(config, repetitions):
                 print(f"Error: output of '{example}' changes when using different optimizations")
                 exit(1)
 
+            bench_exe = bench_binaries.get((i, example))
+            timing_cmd = bench_exe if bench_exe else run_cmd
+            use_bench_timing = bench_exe is not None
+
             times = []
             for _ in range(repetitions):
                 try:
                     start = time.perf_counter()
                     r = subprocess.run(
-                        run_cmd, input=stdin.encode(), capture_output=True,
+                        timing_cmd, input=stdin.encode(), capture_output=True,
                         timeout=BENCH_TIMEOUT,
                     )
                     elapsed_ns = (time.perf_counter() - start) * 10**9

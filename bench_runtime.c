@@ -56,12 +56,10 @@ int main(int argc, char **argv) {
   void *heap = malloc(4096);
   struct timespec start, end;
   clock_gettime(CLOCK_MONOTONIC, &start);
-  uint64_t result = lisp_entry(heap);
+  lisp_entry(heap);
   clock_gettime(CLOCK_MONOTONIC, &end);
   long elapsed = (end.tv_sec - start.tv_sec) * 1000000000L
                + (end.tv_nsec - start.tv_nsec);
-  print_value(result);
-  printf("\n");
   fprintf(stderr, "TIME_NS:%ld\n", elapsed);
   return 0;
 }
