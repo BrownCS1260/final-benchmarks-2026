@@ -22,20 +22,31 @@ git clone https://github.com/BrownCS1260/final-benchmarks-2026.git benchmarks
 ```
 
 2. In the new benchmarks directory, make a `config.json` file. This file should
-   be a JSON-formatted dictionary where the keys are configurations and the
-   values are lists of pass names. For example, it might look like:
-   
+   be a JSON-formatted dictionary where the keys are configuration names and the
+   values are lists of pass names. Use an empty list `[]` for no optimizations,
+   or `null` to run all optimizations (equivalent to invoking the compiler with
+   no `-p` flags). For example:
+
 ```json
-{"No optimizations": [],
- "Inlining": ["uniquify-variables", "inline"],
- "Constant propagation and inlining": ["uniquify-variables", "inline", "propagate-constants"]}
- ```
- 
- 3. Run the benchmark script. It will run each benchmark 10 times using each
+{
+  "No optimizations": [],
+  "All optimizations": null,
+  "Inlining": ["uniquify-variables", "inline"],
+  "Constant propagation and inlining": ["uniquify-variables", "inline", "propagate-constants"]
+}
+```
+
+ 3. Run the benchmark script. It will run each benchmark using each
     specified configuration and write the results to `results.csv`.
-    
+
  ```shell
  python3 bench.py
+ ```
+
+ You can control the number of repetitions with `--repeat` (default 100):
+
+ ```shell
+ python3 bench.py --repeat 50
  ```
  
 Have fun!
